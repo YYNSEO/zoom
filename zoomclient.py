@@ -28,9 +28,10 @@ par2=PhotoImage(file="par2.png")
 join2=PhotoImage(file="join2.png")
 login2=PhotoImage(file="login2.png")
 
-exit_button=PhotoImage(file="exit.png")
-out_button=PhotoImage(file="out.png")
-
+exit_button=PhotoImage(file="3.png")
+out_button=PhotoImage(file="4.png")
+label_imagew=PhotoImage(file="label2.png")
+save_label=PhotoImage(file="save2.png")
 
 
 
@@ -38,7 +39,15 @@ button_width = par1.width()
 button_height = par1.height()
 result_img = 0  # 전역변수로 최종 이미지를 받도록 했다
 
-flags=0
+width=0#----->240402
+height=0#----->240402
+chat_flags=0#----->240402
+HOST = "192.168.31.87"
+PORT = 9999
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client_socket.connect((HOST, PORT))
+
+
 def recvall(sock,count):
     buf = b''
     while count:
@@ -53,10 +62,7 @@ def recvall(sock,count):
 
 
 def streaming():
-    HOST = "192.168.31.87"
-    PORT = 9999
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((HOST, PORT))
+
     global result_img
     count = 0
     while True:
@@ -106,6 +112,8 @@ class App:
         self.login.bind("<Enter>", self.on_3)
         self.login.bind("<Leave>",self.leave_3)
         self.login.pack(padx = 35 ,pady=30)
+
+        self.flags=0
 
     def on_1(self,event):
         self.par.config(image=par2)
@@ -179,6 +187,19 @@ class App:
 
         # 라벨에 클릭 이벤트 바인딩
         self.participate_back_image_label.bind("<Button-1>", self.go_back)
+
+        # 로그인 화면으로 이동하는 버튼 옆에 있는 이미지
+        signup_to_participate_image = PILImage.open("already_account.png")
+        self.already_account_photo = ImageTk.PhotoImage(signup_to_participate_image)
+        self.already_account_label = tk.Label(self.signup_frame, image=self.already_account_photo, border=0)
+        self.already_account_label.place(x=640, rely=1.0, y=-10, anchor="sw")
+
+        # 로그인 화면으로 이동하는 버튼
+        go_to_login_image = PILImage.open("go_to_login.png")
+        self.go_to_login_photo = ImageTk.PhotoImage(go_to_login_image)
+        self.go_to_login_label = tk.Label(self.signup_frame, image=self.go_to_login_photo, border=0)
+        self.go_to_login_label.place(x=800, rely=1.0, y=-19, anchor="sw")
+        self.go_to_login_label.bind("<Button-1>", self.go_login)
 
     def show_login_frame(self):
         #이전 화면 안보이게
@@ -319,10 +340,15 @@ class App:
         label2 = tk.Label(self.new)
         label2.pack(anchor="e")
         btn = tk.Button(label2, text="참가", command=self.inin)
-        btn1 = tk.Button(label2, text="취소")
+        btn1 = tk.Button(label2, text="취소",command=self.close_main_form)
         btn.pack(side="left", padx = 20,pady=5)
         btn1.pack(side="left", padx = 20,pady=5)
 
+    def final_exit(self):
+        self.into.withdraw()  # 창 없애기
+
+    def close_main_form(self):
+        self.master.deiconify()
 
     def inin(self):
 
@@ -333,8 +359,8 @@ class App:
         self.video_canvas = tkinter.Canvas(self.into, width=1320, height=761, bg="gray")
         self.video_canvas.pack(side=tk.LEFT)
 
-        self.button = tk.Button(self.video_canvas, text="비디오중지", width=15, height=5)  # 숨겨진 버튼 생성
-        self.button1 = tk.Button(self.video_canvas, text="참가자", width=15, height=5)
+        self.button = tk.Button(self.video_canvas, text="비디오중지", width=15, height=5, command=self.change)  # 숨겨진 버튼 생성
+        self.button1 = tk.Button(self.video_canvas, text="참가자", width=15, height=5, command=self.start)
         self.button2 = tk.Button(self.video_canvas, text="채팅", width=15, height=5)
         self.button3 = tk.Button(self.video_canvas, text="필터", width=15, height=5)
         self.button4 = tk.Button(self.video_canvas, text="종료", width=10, height=5, command=self.out)
@@ -344,56 +370,119 @@ class App:
         t2.start()
         self.video_canvas.bind("<Motion>", lambda event: on_mouse_move(event, self.button, self.button1, self.button2, self.button3, self.button4))
         self.video_canvas.bind("<Leave>", lambda event: on_mouse_leave(event, self.button, self.button1, self.button2, self.button3, self.button4))
-        self.chatlist = tk.Listbox(self.into, width=38, height=47)
         self.button2.bind("<Button-1>", self.chat_open)
 
+        self.chatlist = tk.Listbox(self.into, width=38)
+        self.labelC = tk.Label(self.into, width=38)
+        self.chat_text = tk.Text(self.into, width=38)
+
+    def chat_open(self, event):
+        global chat_flags
+        if chat_flags == 1:
+            self.into.geometry("1600x761")  # self.into로 변경
+            self.chatlist.place(relx=0.913, rely=0.35, relheight=0.7, anchor=tk.CENTER)  # 채팅 리스트를 우측 상단에 배치
+            self.chat_text.place(relx=0.913, rely=0.9, relheight=0.2, anchor=tk.CENTER)  # 채팅 텍스트를 우측 하단에 배치
+            chat_flags = 0
+
+        else:
+            self.into.geometry("1320x761")  # self.into로 변경
+            self.chatlist.place_forget()
+            self.chat_text.place_forget()
+            chat_flags = 1
+    def start(self):
+        self.flags=0
+
+
     def out(self):
+        #버튼감싸고있는 라벨
+        self.la = tkinter.Label(self.into, image=label_imagew, border=0, highlightthickness=0)
+        # 레이블에 투명 이미지 설정
+        self.la.config(image=label_imagew)
+
+        # 투명 이미지 배경 설정
+        self.la.configure(background='#242424')  # 투명 이미지 위에 다른 위젯 배치를 위해 흰색 배경 설정
+
+        # 이미지가 레이블의 크기와 일치하도록 크기 조정
+        self.la.image = label_imagew
+        self.la.pack()
+
         self.button5 = tk.Button(self.into, text="취소", width=10, height=5, command=self.remove_buttons)
 
-        self.button6 = tk.Button(self.into, text="모두에 대해 회의종료",image=exit_button,border=0)
-        self.button7 = tk.Button(self.into, text="회의 나가기",image=out_button,border=0)
+        self.button6 = tk.Button(self.into, text="모두에 대해 회의종료",bg="#242424",image=exit_button,border=0,borderwidth=0, width=220, height=50, command=self.final_exit)
+        self.button7 = tk.Button(self.into, text="회의 나가기",bg="#242424",image=out_button,border=0,borderwidth=0, width=220, height=50, command=self.labelx)
 
-        self.button6.place(x=1100, y=520)
-        self.button7.place(x=1100, y=560)
+        self.la.place(x=1060, y=570)
+        self.button6.place(x=1080, y=575)
+        self.button7.place(x=1080, y=615)
+        self.button5.place(x=1148, y=675)
         self.button5.place(x=1148, y=675)
         # 마우스 이벤트 다시 바인딩
         self.video_canvas.bind("<Leave>", lambda event: on_mouse_leave(event, self.button, self.button1, self.button2,self.button3, self.button4))
 
-    def hide_buttons(self):
-        self.button.pack_forget()
-        self.button1.pack_forget()
-        self.button2.pack_forget()
-        self.button3.pack_forget()
-        self.button4.pack_forget()
+    def hide_webcam(self, frame):
+
+        height, width = frame.shape[:2]
+        scale_factor = 2
+        new_height = int(height * scale_factor)
+        delta = int((new_height - height) / 2)
+        stretched_frame = cv2.resize(frame, (width, new_height))
+        if delta > 0:
+            stretched_frame = stretched_frame[delta:-delta, :]
+        return stretched_frame
+    def labelx(self):
+        # 버튼감싸고있는 라벨
+        self.label = tkinter.Label(self.into, image=label_imagew, border=0, highlightthickness=0)
+        # 레이블에 투명 이미지 설정
+        self.label.config(image=label_imagew)
+
+        # 투명 이미지 배경 설정
+        self.label.configure(background='#242424')  # 투명 이미지 위에 다른 위젯 배치를 위해 흰색 배경 설정
+
+        # 이미지가 레이블의 크기와 일치하도록 크기 조정
+        self.label.image = label_imagew
+        self.label.pack()
+        self.label.place(x=1060, y=570)
+        self.label2 = tkinter.Label(self.label, text="새 호스트 지정", fg="white", bg="#242424")
+        self.label2.pack( padx=10, pady=10)
+        self.button_save = tkinter.Button(self.label,bg="#242424", image=save_label, width=250, height=50, border=0,borderwidth=0, highlightthickness=0,command=self.final_exit)
+        self.button_save.pack()
 
     def remove_buttons(self):
         # 취소 버튼을 누르면 생성된 버튼들 제거
+        self.la.destroy()
         self.button5.destroy()
         self.button6.destroy()
         self.button7.destroy()
-    def chat_open(self, event):
-        global flags
-        if flags == 1:
-            self.into.geometry("1600x761")  # self.into로 변경
-            self.chatlist.pack(side=tk.RIGHT)
-            flags = 0
 
-        else:
-            self.into.geometry("1320x761")  # self.into로 변경
-            self.chatlist.pack_forget()
-            flags = 1
+    def change(self):
+        self.flags=1
 
+    def hide_video(self, frame):
+        #가운데 라벨 어떻게 띄우는지 모르겠다.
+        # self.labels = tkinter.Label(self.video_canvas, fg="white", text="이윤서", width=100, height=50)
+        # self.labels.pack()
+        black_screen = np.zeros_like(frame)
+        black_screen[:] = (0, 0, 0)  # 모든 픽셀을 검정색으로 채움
+        return black_screen
     def update(self, video_canvas):
+        global vid
         try:
             vid = cv2.cvtColor(result_img, cv2.COLOR_BGR2RGB)
+            if self.flags == 1:
+                vid = self.hide_video(vid)
+
             resized_vid = cv2.resize(vid, (1320,761))  # new_width, new_height는 원하는 크기로 설정
             self.photo = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(resized_vid))
             video_canvas.create_image(0, 0, image=self.photo, anchor=tkinter.NW)
-        except Exception as e:
-            print(e)
+
+        except :
+            pass
         self.master.after(1, self.update, video_canvas)
 
+    def filter(self,frame):
+        blank_frame = 0 * frame
 
+        return blank_frame
 
 def on_mouse_move(event, button, button1, button2, button3, button4):
     button.place(relx=0.1, rely=1, anchor="s")

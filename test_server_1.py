@@ -1,60 +1,50 @@
 import socketserver
 import cv2
 import numpy as np
-import threading
 
 class ClientInfo:
-    def __init__(self, client_address, video_window_name):
+    def __init__(self, request, client_address):
+        self.request = request
         self.client_address = client_address
-        self.video_window_name = video_window_name
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
     client_infos = []
 
-    @classmethod
-    def find_client_info(cls, client_address):
-        for client_info in cls.client_infos:
-            if client_info.client_address == client_address:
-                return client_info
-        return None
-
     def handle(self):
+        client_info = ClientInfo(self.request, self.client_address)
+        self.client_infos.append(client_info)
         print(f"Accepted connection from {self.client_address}")
-
         video_window_name = f"Video from {self.client_address}"
         cv2.namedWindow(video_window_name)
-
-        client_info = ClientInfo(self.client_address, video_window_name)
-        self.client_infos.append(client_info)
 
         try:
             while True:
                 data = self.request.recv(126333)
                 if not data:
                     break
-                if data[:4] == b'MSG:':
-                    message = data[4:].decode()
-                    print(f"Received message from {self.client_address}: {message}")
-                    # Process message or send it to other clients
-                    for client_info in self.client_infos:
-                        if client_info.client_address != self.client_address:
-                            client_info.request.sendall(data)
-
-                elif data[:4] == b'IMG:':
+                if data.startswith(b'IMG:'):
                     frame_data = data[4:]
                     frame = cv2.imdecode(np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR)
                     # Process image or send it to other clients
+                    cv2.imshow(video_window_name, frame)
+                    cv2.waitKey(1)
+                    self.broadcast_image(data, client_info)
+                    self.send_image_to_clients(data, client_info)
 
-                    client_info.request.sendall(data[4:])
-
-
-        except Exception as e:
-            print(f"Error handling client {self.client_address}: {e}")
         finally:
-            print(f"Connection from {self.client_address} closed.")
-            cv2.destroyWindow(video_window_name)
             self.client_infos.remove(client_info)
+            print(f"Connection from {self.client_address} closed.")
 
+    def broadcast_image(self, data, sender_info):
+        """받은 영상 데이터를 다른 모든 클라이언트에게 전송"""
+        for client_info in self.client_infos:
+            if client_info.request != sender_info.request:  # 발신자를 제외한 모든 클라이언트에게 전송
+                client_info.request.sendall(data)
+
+    def send_image_to_clients(self, data, sender_info):
+        for client_info in self.client_infos:
+            # 모든 클라이언트에게 데이터를 전송합니다.
+            client_info.request.sendall(data)
 class MyTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
 

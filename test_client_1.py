@@ -1,10 +1,15 @@
+import datetime
+
 import cv2
 import numpy as np
 import socket
 import threading
 import tkinter
 from PIL import Image, ImageTk
-
+HOST = '192.168.31.87'
+PORT = 9999
+hostname = socket.gethostname()
+ip_address = socket.gethostbyname(hostname)
 class App:
     def __init__(self, master):
         self.master = master
@@ -31,27 +36,35 @@ def send_video_to_server(client_socket):
         encoded_frame = cv2.imencode('.jpg', frame)[1].tobytes()
         client_socket.sendall(b'IMG:' + encoded_frame)
 
+def update_canvas_with_image(app, image):
+    app.photo = ImageTk.PhotoImage(image=image)
+    app.canvas.create_image(0, 0, anchor=tkinter.NW, image=app.photo)
+
+
+
 def receive_video_from_server(client_socket, app):
     while True:
         try:
-            data = client_socket.recv(65536)
+            data = client_socket.recv(200000)
+            print(len(data))
             if not data:
                 break
 
-            if data[:4] == b'IMG:':
-                frame_data = data[4:]
+            if data[1:14] == ip_address.encode():
+                frame_data = data[18:]
+
                 frame = cv2.imdecode(np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 image = Image.fromarray(frame)
-                app.photo = ImageTk.PhotoImage(image=image)  # photo를 App 클래스의 속성으로 유지
-                app.canvas.create_image(0, 0, anchor=tkinter.NW, image=app.photo)
+
+                # 업데이트 함수를 호출하여 화면 업데이트
+                app.master.after(1, update_canvas_with_image, app, image)
+
         except Exception as e:
             print("Error receiving video:", e)
             break
 
 def main():
-    HOST = '192.168.31.87'  # 서버의 IP 주소
-    PORT = 9999  # 서버의 포트 번호
 
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client_socket.connect((HOST, PORT))
@@ -72,4 +85,5 @@ def main():
     client_socket.close()
 
 if __name__ == "__main__":
+
     main()

@@ -1,11 +1,8 @@
 import socketserver
 import cv2
-import numpy as np
-from queue import Queue
 import mysql.connector
 import pickle
-
-enclosure_queue = Queue()
+import time
 
 def connect_to_database():
     return mysql.connector.connect(
@@ -15,7 +12,7 @@ def connect_to_database():
         database="zoom_db"
     )
 
-def insert_data_to_table(data):
+def insert_data_to_table(data): #회원가입
     conn = None
     try:
         conn = connect_to_database()
@@ -32,54 +29,189 @@ def insert_data_to_table(data):
 
 
 class ClientInfo:
-    def __init__(self, request, client_address):
+    def __init__(self, request, client_address, window_name):
         self.request = request
         self.client_address = client_address
+        self.window_name = window_name
+        self.sending_image = False  # 클라이언트가 이미지를 송출하는 상태인지 나타내는 플래그
 
 class MyTCPHandler(socketserver.BaseRequestHandler):
-    client_infos = []
+    MAX_CLIENTS = 5
+    client_infos = {}
+    exit_client=[]
+    def check_id(self, data):  # 중복검사
+        conn = None
+        try:
+            conn = connect_to_database()
+            cursor = conn.cursor()
+            insert_query = "SELECT * FROM pi WHERE id = %s"
+            cursor.execute(insert_query, (data,))
+            result = cursor.fetchone()
+            if result:
+                self.request.sendall("DUPLICATE".encode())
+            else:
+                self.request.sendall("AVAILABLE".encode())
+        except mysql.connector.Error as e:
+            print(f"Database operation failed: {e}")
+            return False
+        finally:
+            if conn is not None and conn.is_connected():
+                conn.close()
+
+    def check_meeting_id(self, data):
+        conn = None
+        try:
+            conn = connect_to_database()
+            cursor = conn.cursor()
+            insert_query = "SELECT * FROM new WHERE id = %s"
+            cursor.execute(insert_query, (data,))
+            result = cursor.fetchone()
+            if result:
+                id_and_pw = (result[0], result[1])
+                serialized_data = pickle.dumps(id_and_pw)
+                self.request.sendall(serialized_data)
+            else:
+                self.request.sendall("DUPLICATE".encode())
+        except mysql.connector.Error as e:
+            print(f"Database operation failed: {e}")
+            return False
+        finally:
+            if conn is not None and conn.is_connected():
+                conn.close()
+
+    def compare_id(self, data): #로그인
+        conn = None
+        try:
+            conn = connect_to_database()
+            cursor = conn.cursor()
+            insert_query = "SELECT * FROM pi WHERE id = %s"
+            cursor.execute(insert_query, (data,))
+            result = cursor.fetchone()
+            print(result)
+            if result:
+                name_and_pw = (result[1], result[3]) #name, pw
+                serialized_data = pickle.dumps(name_and_pw)
+                self.request.sendall(serialized_data)
+            else:
+                self.request.sendall("duplicate".encode())
+        except mysql.connector.Error as e:
+            print(f"Database operation failed: {e}")
+            return False
+        finally:
+            if conn is not None and conn.is_connected():
+                conn.close()
+
+    def insert_meeting_data_to_table(self, data):  # 회의 아이디 비밀번호 부여
+        conn = None
+        try:
+            conn = connect_to_database()
+            cursor = conn.cursor()
+            insert_query = "INSERT INTO new (id, pw) VALUES (%s, %s)"
+            cursor.execute(insert_query, data)
+            conn.commit()
+            cursor.close()
+            print("good")
+        except mysql.connector.Error as e:
+            print(f"Database operation failed: {e}")
+        finally:
+            if conn is not None and conn.is_connected():
+                conn.close()
+
 
     def handle(self):
-        client_info = ClientInfo(self.request, self.client_address)
-        self.client_infos.append(client_info)
+        if len(self.client_infos) >= self.MAX_CLIENTS:
+            print(f"Connection from {self.client_address} refused: Maximum number of clients reached.")
+            return
+        window_name = f"Video from {self.client_address}"
+        client_info = ClientInfo(self.request, self.client_address, window_name)
+        self.client_infos[self.client_address[0]] = client_info
         print(f"Accepted connection from {self.client_address}")
-        video_window_name = f"Video from {self.client_address}"
-        cv2.namedWindow(video_window_name)
 
 
+        try:
+            while True:
+                data = self.request.recv(50000)
+                print(data)
+                if not data:
+                    break
 
-        while True:
-            data = self.request.recv(200000)
-           # original_tuple = pickle.loads(data)
-            if not data:
-                break
-            if data.startswith(b'IMG:'):
-                print(self.client_infos)
-                frame_data = data[4:]
-                frame = cv2.imdecode(np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR)
-                cv2.imshow(video_window_name, frame)
-                cv2.waitKey(1)
-                self.send_image_to_clients(data, client_info)
-            # if len(original_tuple) == 4:
-            #     insert_data_to_table(original_tuple)
+                if data == b'stop':
+                    for client_address, client_info in self.client_infos.items():
+                        client_info.request.sendall(b'stop')
+                        print("22222222222222222")
+                    #print(client_infos)
+                    time.sleep(2)
+                    self.server.shutdown()
+                    self.server.server_close()
+                    break
+                if data.startswith(b'b987123'):
+                    id_value = data[7:].decode()
+                    print(f"Received id 1: {id_value}")
+                    self.compare_id(id_value)
 
+                elif data.startswith(b'a123789'):
+                    id_value = data[7:].decode()
+                    print(f"Received id: {id_value}")
+                    self.check_id(id_value)
+
+                elif data.startswith(b'g987654'):
+                    id_value = data[7:].decode()
+                    self.check_meeting_id(id_value)
+
+                elif data.startswith(b'IMG:') and data.endswith(b'END'):
+                    client_info.sending_image = True # 클라이언트가 이미지를 송출하는 상태로 변경
+                    self.send_image_to_clients(data, client_info)
+
+                elif data.startswith(b'MSG:') and data.endswith(b'END'):
+                    self.send_message_to_clients(data,client_info)
+                    print(data)
+                else:
+                    original_tuple = pickle.loads(data)
+                    print(original_tuple)
+                    if len(original_tuple) == 4:
+                        insert_data_to_table(original_tuple)
+                    elif len(original_tuple) == 2:
+                        self.insert_meeting_data_to_table(original_tuple)
+                # if self.client_address in data:
+                #     print("ddddddddddd")
+        except Exception as e:  # 예외 처리 추가
+            print(f"An error occurred: {e}")
+        finally:
+            del self.client_infos[self.client_address[0]]
+            try:
+                cv2.destroyWindow(window_name)
+            except cv2.error as e:
+                print(f"Error occurred while destroying window: {e}")
+            print(f"Connection from {self.client_address} closed.")
 
     def send_image_to_clients(self, data, sender_info):
-        connected_clients = len(self.client_infos)
-        print(connected_clients)
-        for client_info in self.client_infos:
-            # 모든 클라이언트에게 데이터를 전송합니다.
-            # 클라이언트 주소와 이미지 데이터를 조합하여 바이트 형식으로 전송합니다.
-            message = f"{connected_clients}{client_info.client_address[0]}".encode() + data
-            client_info.request.sendall(message)
+        for ip, client_info in self.client_infos.items():
+            if client_info.sending_image:  # 클라이언트가 이미지를 송출하는 상태인 경우에만 이미지 전송
+                message = data
+                client_info.request.sendall(self.client_address[0].encode() + message)
+
+    def send_message_to_clients(self, data, sender_info):
+        for ip, client_info in self.client_infos.items():
+            client_info.request.sendall(data)
 class MyTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
 
 def start_server():
     HOST, PORT = '192.168.31.87', 9999
+    global server
     server = MyTCPServer((HOST, PORT), MyTCPHandler)
     print("Server listening on port 9999...")
     server.serve_forever()
+    return server
+
+def stop_server(server):  # 서버 객체를 인자로 받아 종료합니다.
+    if server:
+        print("Closing the server...")
+        server.shutdown()
+        server.server_close()
+        print("Server closed.")
+    else:
+        print("Server is not running.")
 
 if __name__ == "__main__":
-    start_server()
+    server = start_server()
